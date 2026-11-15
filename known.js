@@ -45,7 +45,7 @@ function save() {
  *   devices[]: every device seen now, plus ones missed fewer than MISSES_TO_LEAVE scans (status 'online', missed > 0)
  *   offline[]: devices gone MISSES_TO_LEAVE+ scans that were last seen in the past 24 h (status 'offline')
  *   joined[]:  MACs never seen before (empty on the very first run, which is the baseline)
- * plus lists of joined and left device objects for the server to broadcast.
+ * plus lists of joined, left and returned (back after being marked left) devices.
  */
 export function recordScan(result) {
   load();
@@ -53,6 +53,7 @@ export function recordScan(result) {
   const present = new Set();
   const joined = [];
   const left = [];
+  const returned = [];
 
   for (const d of result.devices) {
     if (!d.mac) continue;
@@ -63,6 +64,7 @@ export function recordScan(result) {
       known[d.mac] = { firstSeen: now, lastSeen: now, ip: d.ip, type: d.type, missed: 0 };
       if (!baseline) joined.push(d);
     } else {
+      if ((k.missed ?? 0) >= MISSES_TO_LEAVE) returned.push(d); // had been marked as left
       Object.assign(k, { lastSeen: now, ip: d.ip, type: d.type, missed: 0 });
     }
   }
@@ -92,5 +94,6 @@ export function recordScan(result) {
     scan: { ...result, devices, offline, joined: joined.map((d) => d.mac) },
     joined,
     left,
+    returned,
   };
 }

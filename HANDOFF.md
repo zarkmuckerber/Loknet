@@ -83,6 +83,10 @@ Original plan, for reference:
 - **Known caveat to mention to the user:** phones that rotate private MACs can cause occasional repeat "new device" alerts. Linking those MACs into one device is a "later" item.
 - **Verify:** delete one MAC from `data/known.json` (or turn a phone's Wi-Fi off and on) → within about 60 s the toast appears and the node animates in.
 
+## Done after step 4
+- UI redesign (Apple-style frosted panels, spring drag, Reset layout), no Scan button (fully live, 30 s scans), speed always in Mbps, one-line header.
+- **History:** `history.js` → `data/history.json` (newest first, max 200). known.js now also returns `returned` (back after being marked left). The server sends `history` on SSE connect and `history-add` after scans. In the UI, the 🕘 History button in the header opens a popover, and a badge shows unseen events (localStorage `loknet.historySeen`).
+
 ## Still unverified / worth doing
 - **Open the UI in a real browser** (http://localhost:3000 after `npm start`) and check the map layout, dark mode, the narrow-width stacking (breakpoints at 1150 px and 700 px) and the tooltips. So far only `node --check` has been run on the page script.
 - Emoji icons assume macOS (🛜 needs macOS 14 or newer; the machine is on Darwin 24 = macOS 15).

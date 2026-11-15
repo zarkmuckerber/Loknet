@@ -57,8 +57,7 @@
     background: var(--material); backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%);
     box-shadow: 0 .5px 0 var(--hair);
   }
-  .brand { display: flex; align-items: center; gap: 12px; }
-  .app-icon { width: 34px; height: 34px; flex: none; border-radius: 9px; box-shadow: var(--shadow-sm); }
+  .brand { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; min-width: 0; }
   .brand h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -.022em; line-height: 1.2; }
   .meta { color: var(--muted); font-size: 12px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
   .pill {
@@ -216,7 +215,7 @@
 
   /* ---------- Popover ---------- */
   #tip {
-    position: fixed; z-index: 10; pointer-events: none; max-width: 300px;
+    position: fixed; z-index: 30; pointer-events: none; max-width: 300px;
     background: var(--material-strong); backdrop-filter: blur(30px) saturate(180%); -webkit-backdrop-filter: blur(30px) saturate(180%);
     border-radius: 14px; padding: 12px 14px; box-shadow: var(--shadow-lg), 0 0 0 .5px var(--hair); font-size: 12.5px;
     opacity: 0; transform: scale(.96); transform-origin: top left; transition: opacity .12s, transform .2s var(--spring);
@@ -225,6 +224,42 @@
   #tip h3 { margin: 0 0 4px; font-size: 14px; font-weight: 650; letter-spacing: -.012em; }
   #tip .kv { color: var(--muted); margin-top: 2px; }
   #tip ul { margin: 8px 0 0; padding: 8px 0 0 16px; color: var(--muted); border-top: .5px solid var(--hair); }
+
+  /* ---------- History popover (opens from its button) ---------- */
+  .actions { display: flex; gap: 8px; align-items: center; }
+  .badge {
+    display: inline-block; min-width: 17px; margin-left: 2px; padding: 0 5px; border-radius: 99px;
+    background: var(--accent); color: #fff; font-size: 10.5px; font-weight: 650; line-height: 17px; text-align: center;
+  }
+  .badge[hidden] { display: none; }
+  #historyPop {
+    position: fixed; z-index: 15; width: 370px; max-height: min(70vh, 560px); display: flex; flex-direction: column;
+    background: var(--material-strong); backdrop-filter: blur(30px) saturate(180%); -webkit-backdrop-filter: blur(30px) saturate(180%);
+    border-radius: 18px; box-shadow: var(--shadow-lg), 0 0 0 .5px var(--hair);
+    visibility: hidden; opacity: 0; transform: scale(.96); transform-origin: top right;
+    transition: opacity .15s, transform .25s var(--spring), visibility 0s .25s;
+  }
+  #historyPop:focus { outline: none; }
+  #historyPop.open { visibility: visible; opacity: 1; transform: none; transition-delay: 0s; }
+  #historyPop h2 {
+    margin: 0; padding: 14px 16px 8px; font-size: 15px; font-weight: 650; letter-spacing: -.016em;
+    display: flex; justify-content: space-between; align-items: baseline;
+  }
+  #historyPop h2 small { color: var(--muted); font-weight: 450; font-size: 12px; letter-spacing: 0; }
+  .hlist { overflow: auto; padding: 0 8px 8px; }
+  .hrow { display: flex; gap: 10px; align-items: center; padding: 7px 8px; border-radius: 10px; transition: background .15s; }
+  .hrow:hover, .hrow.hl { background: var(--fill); }
+  .hrow .ico { width: 30px; height: 30px; flex: none; display: grid; place-items: center; border-radius: 9px; background: var(--fill); font-size: 15px; }
+  .hrow .txt { flex: 1; min-width: 0; }
+  .hrow .what { display: flex; align-items: center; gap: 6px; font-weight: 550; font-size: 13px; }
+  .hrow .what i { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .hrow.joined .what i { background: var(--accent); }
+  .hrow.left .what i { background: var(--faint); }
+  .hrow.back .what i { background: var(--live); }
+  .hrow .sub { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 11.5px; }
+  .hrow .sub .mono { font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hrow .sub time { flex: none; font-variant-numeric: tabular-nums; }
+  .hempty { padding: 24px 16px 28px; text-align: center; color: var(--muted); font-size: 13px; }
 
   /* ---------- Toasts: in from the right, out to the right ---------- */
   #toasts { position: fixed; z-index: 20; right: 20px; bottom: 20px; display: grid; gap: 10px; width: min(360px, calc(100vw - 32px)); }
@@ -250,6 +285,7 @@
   }
   @media (max-width: 700px) {
     header { padding: 10px 16px; }
+    #historyPop { width: auto; left: 16px !important; right: 16px !important; }
     .layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "side" "map" "list"; padding: 12px 16px 16px; align-content: start; }
     .side .legend-panel { display: none; }
     .map { min-height: 340px; }
@@ -263,10 +299,11 @@
     .toast { animation: fade-in .2s; transition: opacity .2s; }
     .toast.out { transform: none; }
     .node .body, #tip { transition: none; }
+    #historyPop { transform: none !important; transition: opacity .15s, visibility 0s .15s; }
     @keyframes fade-in { from { opacity: 0; } }
   }
   @media (prefers-reduced-transparency: reduce) {
-    header, .panel, #tip, .toast, th { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--solid); }
+    header, .panel, #tip, .toast, th, #historyPop { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--solid); }
   }
   @media (prefers-contrast: more) {
     :root { --hair: rgba(127, 127, 127, .6); --muted: CanvasText; }
@@ -276,24 +313,21 @@
 <body>
 <header>
   <div class="brand">
-    <svg class="app-icon" viewBox="0 0 34 34" aria-hidden="true">
-      <defs><linearGradient id="appg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3a9bff"/><stop offset="1" stop-color="#0060df"/></linearGradient></defs>
-      <rect width="34" height="34" rx="9" fill="url(#appg)"/>
-      <g stroke="#fff" stroke-width="1.6" stroke-linecap="round" opacity=".9">
-        <line x1="17" y1="17" x2="8" y2="9"/><line x1="17" y1="17" x2="27" y2="11"/><line x1="17" y1="17" x2="10" y2="26"/><line x1="17" y1="17" x2="26" y2="25"/>
-      </g>
-      <g fill="#fff"><circle cx="17" cy="17" r="4"/><circle cx="8" cy="9" r="2.3"/><circle cx="27" cy="11" r="2.3"/><circle cx="10" cy="26" r="2.3"/><circle cx="26" cy="25" r="2.3"/></g>
-    </svg>
-    <div>
-      <h1>Loknet</h1>
-      <div class="meta">
-        <span class="pill"><span class="dot" id="dot"></span><span id="status">Connecting…</span></span>
-        <span id="subnet"></span><span id="scanned"></span>
-      </div>
+    <h1>Loknet</h1>
+    <div class="meta">
+      <span class="pill"><span class="dot" id="dot"></span><span id="status">Connecting…</span></span>
+      <span id="subnet"></span><span id="scanned"></span>
     </div>
   </div>
+  <div class="actions">
+  <button class="capsule quiet" id="historyBtn" aria-expanded="false" aria-controls="historyPop">🕘 History <span class="badge" id="historyBadge" hidden></span></button>
   <button class="capsule" id="notifyBtn" hidden title="Show a macOS notification when a device joins while this tab is in the background">🔔 Enable notifications</button>
+  </div>
 </header>
+<div id="historyPop" role="dialog" aria-label="History" tabindex="-1">
+  <h2>History <small id="historyCount"></small></h2>
+  <div class="hlist" id="historyList"></div>
+</div>
 
 <div class="layout">
   <div class="side">
@@ -688,6 +722,72 @@ $('notifyBtn').addEventListener('click', () => {
 });
 updateNotifyBtn();
 
+/* ---------------- History ---------------- */
+const SEEN_KEY = 'loknet.historySeen';
+let historyLog = [];
+let historySeen = null;
+try { historySeen = localStorage.getItem(SEEN_KEY); } catch {}
+const KIND = { joined: 'joined', left: 'left', back: 'back online' };
+
+function fmtWhen(iso) {
+  const d = new Date(iso), now = new Date();
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((day(now) - day(d)) / 864e5);
+  if (diff === 0) return time;
+  if (diff === 1) return `Yesterday ${time}`;
+  return `${d.toLocaleDateString([], { day: 'numeric', month: 'short' })} ${time}`;
+}
+function renderHistory() {
+  const unseen = historyLog.filter((e) => !historySeen || e.at > historySeen).length;
+  const badge = $('historyBadge');
+  badge.hidden = !unseen || isHistoryOpen();
+  badge.textContent = unseen > 99 ? '99+' : unseen;
+  if (!isHistoryOpen()) return;
+  $('historyCount').textContent = `${historyLog.length} event${historyLog.length === 1 ? '' : 's'}`;
+  $('historyList').innerHTML = historyLog.length ? historyLog.map((e) => {
+    const t = typeOf(e);
+    return `<div class="hrow ${e.kind}" data-mac="${esc(e.mac)}">
+      <span class="ico">${t.icon}</span>
+      <div class="txt">
+        <div class="what"><i></i>${esc(t.label)} ${KIND[e.kind] ?? esc(e.kind)}</div>
+        <div class="sub"><span class="mono">${esc(e.ip)} · ${esc(e.mac)}</span><time datetime="${esc(e.at)}">${fmtWhen(e.at)}</time></div>
+      </div>
+    </div>`;
+  }).join('') : '<div class="hempty">No activity yet. Joins and leaves will show up here.</div>';
+}
+const isHistoryOpen = () => $('historyPop').classList.contains('open');
+function openHistory() {
+  const r = $('historyBtn').getBoundingClientRect();
+  const pop = $('historyPop');
+  pop.style.top = `${r.bottom + 8}px`;
+  pop.style.right = `${Math.max(16, innerWidth - r.right)}px`;
+  pop.classList.add('open');
+  $('historyBtn').setAttribute('aria-expanded', 'true');
+  historySeen = historyLog[0]?.at ?? new Date().toISOString();
+  try { localStorage.setItem(SEEN_KEY, historySeen); } catch {}
+  renderHistory();
+  pop.focus({ preventScroll: true });
+}
+function closeHistory(returnFocus = true) {
+  if (!isHistoryOpen()) return;
+  $('historyPop').classList.remove('open');
+  $('historyBtn').setAttribute('aria-expanded', 'false');
+  hideTip();
+  if (returnFocus) $('historyBtn').focus({ preventScroll: true });
+  renderHistory();
+}
+$('historyBtn').addEventListener('click', () => (isHistoryOpen() ? closeHistory() : openHistory()));
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeHistory(); });
+document.addEventListener('pointerdown', (e) => {
+  if (isHistoryOpen() && !e.target.closest('#historyPop, #historyBtn')) closeHistory(false);
+});
+function onHistory(list, replace) {
+  historyLog = replace ? list : [...list, ...historyLog].slice(0, 200);
+  if (isHistoryOpen()) { historySeen = historyLog[0]?.at ?? historySeen; try { localStorage.setItem(SEEN_KEY, historySeen); } catch {} }
+  renderHistory();
+}
+
 /* ---------------- Live speed ---------------- */
 const history = [];
 function fmtRate(bps) {
@@ -724,6 +824,8 @@ function connect() {
   es.onerror = () => { connected = false; setLive(); };
   es.addEventListener('speed', (e) => onSpeed(JSON.parse(e.data)));
   es.addEventListener('device-joined', (e) => onJoined(JSON.parse(e.data)));
+  es.addEventListener('history', (e) => onHistory(JSON.parse(e.data), true));
+  es.addEventListener('history-add', (e) => onHistory(JSON.parse(e.data), false));
   es.addEventListener('scanning', () => { scanning = true; setLive(); });
   es.addEventListener('scan-error', (e) => {
     scanning = false; setLive();
@@ -752,6 +854,7 @@ $('rows').addEventListener('click', async (e) => {
 });
 bindHover($('rows'), 'tr[data-mac]');
 bindHover($('web'), '.node');
+bindHover($('historyList'), '.hrow');
 
 fetch('/api/types').then((r) => r.json()).then((t) => { TYPES = t; }).finally(connect); // the server scans every 30 s and pushes results
 </script>

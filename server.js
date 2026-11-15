@@ -7,6 +7,7 @@ import { OUI_PATH, reloadVendors } from './vendor.js';
 import { fetchOui } from './scripts/fetch-oui.js';
 import { TYPES } from './classify.js';
 import { recordScan } from './known.js';
+import { addEvents, getHistory } from './history.js';
 
 const HOST = '127.0.0.1'; // local only: other machines can't trigger scans
 const PORT = Number(process.env.PORT) || 3000;
@@ -30,13 +31,19 @@ function runScan() {
   broadcast('scanning', {});
   running = scan()
     .then((raw) => {
-      const { scan: result, joined, left } = recordScan(raw);
+      const { scan: result, joined, left, returned } = recordScan(raw);
       iface = result.interface;
       lastScan = result;
       console.log(`Scan: ${raw.devices.length} devices in ${raw.durationMs} ms` +
         (joined.length ? `, ${joined.length} new` : '') + (left.length ? `, ${left.length} left` : ''));
       for (const d of joined) { console.log(`  New device: ${d.type} ${d.ip} ${d.mac}`); broadcast('device-joined', d); }
       for (const d of left) { console.log(`  Device left: ${d.type} ${d.ip} ${d.mac}`); broadcast('device-left', d); }
+      const events = addEvents([
+        ...joined.map((device) => ({ kind: 'joined', device })),
+        ...left.map((device) => ({ kind: 'left', device })),
+        ...returned.map((device) => ({ kind: 'back', device })),
+      ], result.scannedAt ? new Date(result.scannedAt).toISOString() : undefined);
+      if (events.length) broadcast('history-add', events);
       broadcast('scan', result);
       return result;
     })
@@ -70,6 +77,7 @@ const server = http.createServer(async (req, res) => {
       });
       res.write('retry: 3000\n\n');
       if (lastScan) res.write(`event: scan\ndata: ${JSON.stringify(lastScan)}\n\n`);
+      res.write(`event: history\ndata: ${JSON.stringify(getHistory())}\n\n`);
       if (running) res.write('event: scanning\ndata: {}\n\n');
       clients.add(res);
       req.on('close', () => clients.delete(res));

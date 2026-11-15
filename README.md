@@ -35,11 +35,12 @@ Each rule adds points to a device type, and the type with the most points wins. 
 **New-device alerts** ([known.js](known.js)). Loknet scans by itself once a minute (the Scan button scans right away). Every device it has seen is saved by MAC in `data/known.json`. The very first scan is the baseline, so devices already on the network don't trigger alerts. After that:
 - A MAC that isn't in `known.json` causes a pop-up on the page ("🔔 New device: …"), and its node pulses on the map. If the Loknet tab is in the background, a macOS notification is shown as well. The browser asks for permission the first time you click **Scan**.
 - A device that misses 3 scans in a row (about 3 minutes) is marked offline. It is drawn faded with a dashed line, and it stays listed for 24 hours.
+- **History** (the 🕘 button at the top) lists every join, leave and "back online" with its time. The number on the button counts events since you last opened it. The log is saved in `data/history.json` and keeps the latest 200 events.
 - To forget a device, delete its entry from `known.json`. The file is re-read on every scan, and deleting the whole file starts a new baseline.
 
 **Server** ([server.js](server.js)) listens only on `127.0.0.1`.
 - `GET /api/scan` runs a scan.
-- `GET /api/events` is a Server-Sent Events stream that pushes `speed` every second, `scan` whenever a scan finishes, and `device-joined` / `device-left`.
+- `GET /api/events` is a Server-Sent Events stream that pushes `speed` every second, `scan` whenever a scan finishes, and `device-joined` / `device-left`, and `history` / `history-add` for the log.
 
 ## Notes
 - Phones and recent Macs use a **private MAC** on each Wi-Fi network, so the maker can't be looked up for them. Loknet then relies on Bonjour names, ports and behaviour instead.
