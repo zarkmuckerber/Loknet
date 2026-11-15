@@ -1,0 +1,759 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loknet</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f2f2f7; --bg-glow: rgba(0, 122, 255, .08);
+    --material: rgba(255, 255, 255, .72); --material-strong: rgba(255, 255, 255, .86); --solid: #ffffff;
+    --text: #1d1d1f; --muted: #6e6e73; --faint: #aeaeb2;
+    --hair: rgba(60, 60, 67, .13); --fill: rgba(120, 120, 128, .12); --fill-hover: rgba(120, 120, 128, .18);
+    --accent: #007aff; --accent-fill: rgba(0, 122, 255, .12);
+    --down: #007aff; --up: #ff9500; --live: #34c759; --danger: #ff3b30;
+    --link: rgba(60, 60, 67, .22); --node: #ffffff;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, .05), 0 1px 1px rgba(0, 0, 0, .03);
+    --shadow-lg: 0 12px 40px rgba(0, 0, 0, .14), 0 2px 8px rgba(0, 0, 0, .06);
+    --node-shadow: drop-shadow(0 2px 6px rgba(0, 0, 0, .10)) drop-shadow(0 1px 1px rgba(0, 0, 0, .06));
+    --edge: rgba(255, 255, 255, .7);
+    --spring: cubic-bezier(.2, .9, .25, 1); /* critically-damped feel for CSS-driven bits */
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #000000; --bg-glow: rgba(10, 132, 255, .14);
+      --material: rgba(28, 28, 30, .72); --material-strong: rgba(44, 44, 46, .88); --solid: #1c1c1e;
+      --text: #f5f5f7; --muted: #98989d; --faint: #636366;
+      --hair: rgba(255, 255, 255, .09); --fill: rgba(120, 120, 128, .22); --fill-hover: rgba(120, 120, 128, .32);
+      --accent: #0a84ff; --accent-fill: rgba(10, 132, 255, .2);
+      --down: #0a84ff; --up: #ff9f0a; --live: #30d158; --danger: #ff453a;
+      --link: rgba(235, 235, 245, .16); --node: #2c2c2e;
+      --shadow-sm: none;
+      --shadow-lg: 0 12px 40px rgba(0, 0, 0, .6);
+      --node-shadow: drop-shadow(0 2px 8px rgba(0, 0, 0, .5));
+      --edge: rgba(255, 255, 255, .06);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; color: var(--text);
+    background: radial-gradient(1200px 600px at 50% -10%, var(--bg-glow), transparent 70%), var(--bg);
+    font: 14px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    letter-spacing: -.003em;
+    -webkit-font-smoothing: antialiased;
+    display: flex; flex-direction: column;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace; font-size: 12px; letter-spacing: 0; }
+  :focus-visible { outline: 3px solid var(--accent-fill); outline-offset: 2px; border-radius: 6px; }
+
+  /* ---------- Toolbar ---------- */
+  header {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 12px 24px;
+    background: var(--material); backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%);
+    box-shadow: 0 .5px 0 var(--hair);
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .app-icon { width: 34px; height: 34px; flex: none; border-radius: 9px; box-shadow: var(--shadow-sm); }
+  .brand h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -.022em; line-height: 1.2; }
+  .meta { color: var(--muted); font-size: 12px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px; padding: 1px 9px 1px 7px; border-radius: 99px;
+    background: var(--fill); color: var(--text); font-weight: 500; font-size: 11.5px;
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); transition: background .3s; }
+  .dot.live { background: var(--live); box-shadow: 0 0 0 3px color-mix(in srgb, var(--live) 22%, transparent); }
+  .dot.busy { background: var(--accent); animation: blink 1.2s ease-in-out infinite; }
+  @keyframes blink { 50% { opacity: .35; } }
+
+  button.capsule {
+    font: inherit; font-size: 12.5px; font-weight: 500; color: var(--accent); background: var(--accent-fill);
+    border: 0; border-radius: 99px; padding: 5px 13px; cursor: pointer; white-space: nowrap;
+    transition: transform .12s var(--spring), background .2s;
+  }
+  button.capsule:hover { background: color-mix(in srgb, var(--accent-fill) 100%, var(--accent) 8%); }
+  button.capsule:active { transform: scale(.96); }
+  button.capsule.quiet { color: var(--muted); background: var(--fill); padding: 3px 10px; font-size: 12px; }
+  button.capsule.quiet:hover { color: var(--text); background: var(--fill-hover); }
+  button[hidden] { display: none; }
+
+  /* ---------- Layout: speed top-left, map in the middle, device list top-right ---------- */
+  .layout {
+    flex: 1; min-height: 0; display: grid; gap: 16px; padding: 16px 20px 20px;
+    grid-template-columns: 330px minmax(0, 1fr) 420px;
+    grid-template-areas: "side map list";
+  }
+  .side { grid-area: side; display: flex; flex-direction: column; gap: 16px; min-height: 0; }
+  .map { grid-area: map; }
+  .list { grid-area: list; }
+  .panel {
+    background: var(--material); backdrop-filter: blur(30px) saturate(170%); -webkit-backdrop-filter: blur(30px) saturate(170%);
+    border-radius: 20px; box-shadow: var(--shadow-sm), inset 0 .5px 0 var(--edge), 0 0 0 .5px var(--hair);
+    min-height: 0; display: flex; flex-direction: column; overflow: hidden;
+  }
+  .panel > h2 {
+    margin: 0; padding: 15px 18px 8px; font-size: 15px; font-weight: 650; letter-spacing: -.016em;
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  }
+  .panel > h2 small { color: var(--muted); font-weight: 450; font-size: 12px; letter-spacing: 0; }
+  .tools { display: flex; gap: 8px; align-items: center; }
+
+  /* ---------- Speed ---------- */
+  .speed { padding: 8px 20px 20px; display: grid; gap: 16px; }
+  .rate .label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; font-weight: 500; margin-bottom: 2px; }
+  .rate .label i { width: 8px; height: 8px; border-radius: 50%; }
+  .rate.down i { background: var(--down); } .rate.up i { background: var(--up); }
+  .rate .num { display: flex; align-items: baseline; gap: 5px; }
+  .rate .val {
+    font-size: 38px; font-weight: 650; letter-spacing: -.035em; line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+  }
+  .rate .unit { color: var(--muted); font-size: 14px; font-weight: 500; }
+  .rates { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .spark { width: 100%; height: 110px; display: block; border-radius: 12px; background: var(--fill); }
+  .spark polyline { fill: none; stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+  .spark .d { stroke: var(--down); } .spark .u { stroke: var(--up); }
+  .spark .da { fill: url(#gradD); } .spark .ua { fill: url(#gradU); }
+  .hint { color: var(--muted); font-size: 11.5px; }
+
+  /* ---------- Legend ---------- */
+  .legend { padding: 2px 10px 12px; display: grid; gap: 1px; overflow: auto; }
+  .legend div {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 8px; border-radius: 10px; font-size: 13px;
+  }
+  .legend div span { display: inline-flex; align-items: center; gap: 9px; }
+  .legend .ico { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px; background: var(--fill); font-size: 14px; }
+  .legend b {
+    min-width: 24px; text-align: center; font-weight: 600; font-size: 12px; font-variant-numeric: tabular-nums;
+    color: var(--muted); background: var(--fill); border-radius: 99px; padding: 1px 7px;
+  }
+
+  /* ---------- Map ---------- */
+  .map svg { flex: 1; width: 100%; min-height: 0; display: block; touch-action: none; }
+  .link { stroke: var(--link); stroke-width: 1.6; stroke-linecap: round; transition: stroke .2s, stroke-width .2s; }
+  .link.self { stroke: color-mix(in srgb, var(--accent) 45%, transparent); }
+  .link.hl { stroke: var(--accent); stroke-width: 2.6; }
+  .link.offline { stroke: var(--link); stroke-dasharray: 2 8; opacity: .7; }
+
+  .node { cursor: grab; outline: none; }
+  .node .body { transform-box: fill-box; transform-origin: center; transition: transform .35s var(--spring); }
+  .node.hl .body { transform: scale(1.06); }
+  .node.dragging { cursor: grabbing; }
+  .node.dragging .body { transform: scale(1.12); transition-duration: .2s; }
+  .node circle.disc { fill: var(--node); stroke: var(--hair); stroke-width: 1; filter: var(--node-shadow); transition: stroke .2s, stroke-width .2s; }
+  .node.hl circle.disc, .node:focus-visible circle.disc { stroke: var(--accent); stroke-width: 2.5; }
+  .node.self circle.disc { stroke: color-mix(in srgb, var(--accent) 60%, transparent); stroke-width: 2; }
+  .node.router circle.disc { fill: var(--solid); stroke: var(--accent); stroke-width: 3; }
+  .node .ico { text-anchor: middle; dominant-baseline: central; user-select: none; pointer-events: none; }
+  .node .lbl {
+    text-anchor: middle; fill: var(--muted); font-size: 16px; font-weight: 500; letter-spacing: -.01em;
+    paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; pointer-events: none;
+  }
+  .node .lbl tspan.ip { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 14.5px; font-weight: 400; letter-spacing: 0; }
+  .node.router .lbl { fill: var(--text); font-weight: 650; font-size: 17px; }
+  .node .halo { pointer-events: none; fill: url(#halo); }
+  #web.scanning .node.router .halo { animation: breathe 1.6s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+  @keyframes breathe { 50% { opacity: .45; transform: scale(.92); } }
+  .node .ripple { fill: none; stroke: var(--accent); stroke-width: 2; pointer-events: none; transform-box: fill-box; transform-origin: center; opacity: 0; }
+  .node.new .ripple { animation: ripple 1.8s var(--spring) 3; }
+  @keyframes ripple { 0% { opacity: .9; transform: scale(1); } 100% { opacity: 0; transform: scale(2.2); } }
+  .node.offline { opacity: .45; }
+  .node.offline circle.disc { stroke-dasharray: 3 4; stroke: var(--faint); filter: none; }
+  .map-empty { fill: var(--muted); text-anchor: middle; font-size: 15px; }
+
+  /* ---------- Device list ---------- */
+  select {
+    font: inherit; font-size: 12px; font-weight: 500; color: var(--text);
+    appearance: none; -webkit-appearance: none; border: 0; border-radius: 99px; padding: 4px 26px 4px 11px; cursor: pointer;
+    background: var(--fill) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238e8e93' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 10px center;
+  }
+  select:hover { background-color: var(--fill-hover); }
+  .scroll { overflow: auto; min-height: 0; padding: 0 8px 8px; }
+  table { width: 100%; border-collapse: separate; border-spacing: 0; }
+  th, td { text-align: left; padding: 9px 8px; white-space: nowrap; }
+  th {
+    font-size: 11.5px; color: var(--muted); font-weight: 500; position: sticky; top: 0; z-index: 1;
+    background: var(--material-strong); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    cursor: pointer; user-select: none; transition: color .15s;
+  }
+  th:hover { color: var(--text); }
+  th .arr { color: var(--accent); font-weight: 700; }
+  td { border-top: .5px solid var(--hair); }
+  tbody tr:first-child td { border-top-color: transparent; }
+  tbody tr { transition: background .15s; }
+  tbody tr:hover, tbody tr.hl { background: var(--fill); }
+  tbody tr:hover td, tbody tr.hl td, tbody tr:hover + tr td, tbody tr.hl + tr td { border-top-color: transparent; }
+  tbody tr td:first-child { border-radius: 10px 0 0 10px; }
+  tbody tr td:last-child { border-radius: 0 10px 10px 0; }
+  .type { display: inline-flex; align-items: center; gap: 9px; font-weight: 500; }
+  .type .ico { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px; background: var(--fill); font-size: 14px; }
+  td.mono { color: var(--muted); }
+  tbody tr:hover td.mono, tbody tr.hl td.mono { color: var(--text); }
+  .tag {
+    display: inline-block; font-size: 10.5px; font-weight: 600; padding: 1px 7px; border-radius: 99px; margin-left: 6px;
+    background: var(--fill); color: var(--muted); vertical-align: 1px; letter-spacing: .01em;
+  }
+  .tag.strong { background: var(--accent-fill); color: var(--accent); }
+  .conf-low { opacity: .75; }
+  tr.offline td, tr.offline .type { color: var(--faint); }
+  tr.offline .ico { opacity: .5; }
+  td.mac { position: relative; padding-right: 30px; }
+  .copy {
+    position: absolute; right: 4px; top: 50%; translate: 0 -50%;
+    font: inherit; font-size: 12px; background: none; border: 0; color: var(--faint); cursor: pointer;
+    padding: 2px 5px; border-radius: 6px; opacity: 0; transition: opacity .15s, color .15s, transform .12s var(--spring);
+  }
+  tr:hover .copy, .copy:focus-visible, .copy.done { opacity: 1; }
+  .copy:hover { color: var(--accent); background: var(--accent-fill); }
+  .copy:active { transform: scale(.9); }
+  .empty { padding: 32px 14px; text-align: center; color: var(--muted); border-top: 0 !important; }
+  .error { color: var(--danger); }
+
+  /* ---------- Popover ---------- */
+  #tip {
+    position: fixed; z-index: 10; pointer-events: none; max-width: 300px;
+    background: var(--material-strong); backdrop-filter: blur(30px) saturate(180%); -webkit-backdrop-filter: blur(30px) saturate(180%);
+    border-radius: 14px; padding: 12px 14px; box-shadow: var(--shadow-lg), 0 0 0 .5px var(--hair); font-size: 12.5px;
+    opacity: 0; transform: scale(.96); transform-origin: top left; transition: opacity .12s, transform .2s var(--spring);
+  }
+  #tip.show { opacity: 1; transform: none; }
+  #tip h3 { margin: 0 0 4px; font-size: 14px; font-weight: 650; letter-spacing: -.012em; }
+  #tip .kv { color: var(--muted); margin-top: 2px; }
+  #tip ul { margin: 8px 0 0; padding: 8px 0 0 16px; color: var(--muted); border-top: .5px solid var(--hair); }
+
+  /* ---------- Toasts: in from the right, out to the right ---------- */
+  #toasts { position: fixed; z-index: 20; right: 20px; bottom: 20px; display: grid; gap: 10px; width: min(360px, calc(100vw - 32px)); }
+  .toast {
+    display: flex; gap: 12px; align-items: center;
+    background: var(--material-strong); backdrop-filter: blur(30px) saturate(180%); -webkit-backdrop-filter: blur(30px) saturate(180%);
+    border-radius: 18px; padding: 12px 14px; box-shadow: var(--shadow-lg), 0 0 0 .5px var(--hair);
+    font-size: 13px; cursor: pointer; animation: toast-in .5s var(--spring);
+    transition: opacity .3s, transform .35s var(--spring);
+  }
+  .toast .ticon { width: 38px; height: 38px; flex: none; display: grid; place-items: center; border-radius: 10px; background: var(--accent-fill); font-size: 19px; }
+  .toast b { display: block; font-weight: 650; letter-spacing: -.01em; }
+  .toast .mono { color: var(--muted); font-size: 12px; }
+  .toast:active { transform: scale(.98); }
+  .toast.out { opacity: 0; transform: translateX(110%); }
+  @keyframes toast-in { from { opacity: 0; transform: translateX(110%); } }
+
+  /* ---------- Narrow windows ---------- */
+  @media (max-width: 1150px) {
+    .layout { grid-template-columns: 330px minmax(0, 1fr); grid-template-areas: "side list" "map map"; grid-auto-rows: minmax(0, auto); overflow: auto; }
+    .map { min-height: 460px; }
+    .list { max-height: 440px; }
+  }
+  @media (max-width: 700px) {
+    header { padding: 10px 16px; }
+    .layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "side" "map" "list"; padding: 12px 16px 16px; align-content: start; }
+    .side .legend-panel { display: none; }
+    .map { min-height: 340px; }
+    .list { max-height: none; }
+  }
+
+  /* ---------- Accessibility ---------- */
+  @media (prefers-reduced-motion: reduce) {
+    .dot.busy, #web.scanning .node.router .halo { animation: none; }
+    .node.new .ripple { animation: none; opacity: .8; transform: scale(1.3); }
+    .toast { animation: fade-in .2s; transition: opacity .2s; }
+    .toast.out { transform: none; }
+    .node .body, #tip { transition: none; }
+    @keyframes fade-in { from { opacity: 0; } }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    header, .panel, #tip, .toast, th { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--solid); }
+  }
+  @media (prefers-contrast: more) {
+    :root { --hair: rgba(127, 127, 127, .6); --muted: CanvasText; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <svg class="app-icon" viewBox="0 0 34 34" aria-hidden="true">
+      <defs><linearGradient id="appg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3a9bff"/><stop offset="1" stop-color="#0060df"/></linearGradient></defs>
+      <rect width="34" height="34" rx="9" fill="url(#appg)"/>
+      <g stroke="#fff" stroke-width="1.6" stroke-linecap="round" opacity=".9">
+        <line x1="17" y1="17" x2="8" y2="9"/><line x1="17" y1="17" x2="27" y2="11"/><line x1="17" y1="17" x2="10" y2="26"/><line x1="17" y1="17" x2="26" y2="25"/>
+      </g>
+      <g fill="#fff"><circle cx="17" cy="17" r="4"/><circle cx="8" cy="9" r="2.3"/><circle cx="27" cy="11" r="2.3"/><circle cx="10" cy="26" r="2.3"/><circle cx="26" cy="25" r="2.3"/></g>
+    </svg>
+    <div>
+      <h1>Loknet</h1>
+      <div class="meta">
+        <span class="pill"><span class="dot" id="dot"></span><span id="status">Connecting…</span></span>
+        <span id="subnet"></span><span id="scanned"></span>
+      </div>
+    </div>
+  </div>
+  <button class="capsule" id="notifyBtn" hidden title="Show a macOS notification when a device joins while this tab is in the background">🔔 Enable notifications</button>
+</header>
+
+<div class="layout">
+  <div class="side">
+    <section class="panel">
+      <h2>Wi-Fi speed <small id="speedIface">This Mac</small></h2>
+      <div class="speed">
+        <div class="rates">
+          <div class="rate down"><div class="label"><i></i>Download</div><div class="num"><span class="val" id="down">–</span><span class="unit" id="downU"></span></div></div>
+          <div class="rate up"><div class="label"><i></i>Upload</div><div class="num"><span class="val" id="up">–</span><span class="unit" id="upU"></span></div></div>
+        </div>
+        <svg class="spark" viewBox="0 0 60 40" preserveAspectRatio="none" aria-label="Speed over the last minute">
+          <defs>
+            <linearGradient id="gradD" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color: var(--down); stop-opacity: .28"/><stop offset="1" style="stop-color: var(--down); stop-opacity: 0"/></linearGradient>
+            <linearGradient id="gradU" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color: var(--up); stop-opacity: .22"/><stop offset="1" style="stop-color: var(--up); stop-opacity: 0"/></linearGradient>
+          </defs>
+          <polygon class="da" id="areaD" points=""/><polygon class="ua" id="areaU" points=""/>
+          <polyline class="d" id="sparkD" points=""/><polyline class="u" id="sparkU" points=""/>
+        </svg>
+        <div class="hint">This Mac's own traffic · last 60 seconds</div>
+      </div>
+    </section>
+    <section class="panel legend-panel">
+      <h2>Device types</h2>
+      <div class="legend" id="legend"><div>—</div></div>
+    </section>
+  </div>
+
+  <section class="panel map">
+    <h2>Network map <span class="tools"><small id="mapNote"></small><button class="capsule quiet" id="resetLayout" hidden title="Put every device back in its default place">Reset layout</button></span></h2>
+    <svg id="web" viewBox="-440 -440 880 880" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Devices connected to the router"></svg>
+  </section>
+
+  <section class="panel list">
+    <h2>Devices <span class="tools"><select id="filter" aria-label="Filter by type"><option value="">All types</option></select></span></h2>
+    <div class="scroll">
+      <table>
+        <thead><tr>
+          <th data-sort="type">Type <span class="arr"></span></th>
+          <th data-sort="ip">IP <span class="arr">↑</span></th>
+          <th data-sort="mac">MAC <span class="arr"></span></th>
+        </tr></thead>
+        <tbody id="rows"><tr><td colspan="3" class="empty">Scanning your network…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+<div id="tip" role="tooltip"></div>
+<div id="toasts" aria-live="polite"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const SVGNS = 'http://www.w3.org/2000/svg';
+const ipNum = (ip) => ip.split('.').reduce((n, o) => n * 256 + +o, 0);
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+
+let TYPES = {};
+const TYPE_ORDER = ['router', 'computer', 'phone', 'tablet', 'tv', 'speaker', 'console', 'printer', 'camera', 'nas', 'smart', 'unknown'];
+let state = { data: null, sort: { key: 'ip', dir: 1 }, filter: '' };
+const allDevices = () => [...state.data.devices, ...(state.data.offline ?? [])];
+const fmtTime = (iso) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+const typeOf = (d) => TYPES[d.type] ?? { label: d.type, icon: '❔' };
+
+/* ---------------- Device list ---------------- */
+function renderList() {
+  const { data, sort, filter } = state;
+  if (!data) return;
+  const order = (t) => TYPE_ORDER.indexOf(t);
+  const rows = allDevices()
+    .filter((d) => !filter || d.type === filter)
+    .sort((a, b) => {
+      const v = sort.key === 'ip' ? ipNum(a.ip) - ipNum(b.ip)
+        : sort.key === 'type' ? order(a.type) - order(b.type) || ipNum(a.ip) - ipNum(b.ip)
+        : a.mac.localeCompare(b.mac);
+      return (a.status === 'offline') - (b.status === 'offline') || v * sort.dir;
+    });
+  $('rows').innerHTML = rows.length ? rows.map((d) => `
+    <tr data-mac="${esc(d.mac)}" class="${d.status === 'offline' ? 'offline' : ''}">
+      <td><span class="type ${d.confidence === 'low' ? 'conf-low' : ''}"><span class="ico">${typeOf(d).icon}</span>${esc(typeOf(d).label)}</span>${
+        d.isSelf ? '<span class="tag strong">You</span>' : ''}${
+        d.status === 'offline' ? `<span class="tag">Offline · ${fmtTime(d.lastSeen)}</span>` : ''}</td>
+      <td class="mono">${esc(d.ip)}</td>
+      <td class="mono mac">${esc(d.mac)}<button class="copy" data-copy="${esc(d.mac)}" title="Copy MAC" aria-label="Copy MAC">⧉</button></td>
+    </tr>`).join('') : '<tr><td colspan="3" class="empty">No devices of this type</td></tr>';
+  document.querySelectorAll('th[data-sort]').forEach((th) => {
+    th.querySelector('.arr').textContent = th.dataset.sort === sort.key ? (sort.dir > 0 ? '↑' : '↓') : '';
+  });
+}
+
+function renderLegend() {
+  const counts = {};
+  for (const d of state.data.devices) counts[d.type] = (counts[d.type] ?? 0) + 1;
+  const present = TYPE_ORDER.filter((t) => counts[t]);
+  $('legend').innerHTML = present.map((t) =>
+    `<div><span><span class="ico">${TYPES[t]?.icon ?? ''}</span>${esc(TYPES[t]?.label ?? t)}</span><b>${counts[t]}</b></div>`).join('');
+  const sel = $('filter');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">All types</option>' + present.map((t) =>
+    `<option value="${t}">${esc(TYPES[t]?.label ?? t)} (${counts[t]})</option>`).join('');
+  sel.value = present.includes(current) ? current : '';
+  state.filter = sel.value;
+}
+
+/* ---------------- Network map ---------------- */
+// Positions the user dragged devices to, kept in this browser (key: MAC, or 'router').
+const POS_KEY = 'loknet.positions';
+const BOUND = 400; // soft edge of the map; dragging past it rubber-bands
+let positions = {};
+try { positions = JSON.parse(localStorage.getItem(POS_KEY)) ?? {}; } catch {}
+const savePositions = () => {
+  try { localStorage.setItem(POS_KEY, JSON.stringify(positions)); } catch {}
+  $('resetLayout').hidden = !Object.keys(positions).length;
+};
+const nodeKey = (d) => (d.isGateway ? 'router' : d.mac);
+function el(tag, attrs = {}, parent) {
+  const n = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  parent?.appendChild(n);
+  return n;
+}
+
+// Default positions: router in the middle, up to 12 devices on an inner ring, the rest on an outer ring.
+function layout() {
+  const devices = state.data.devices;
+  const router = devices.find((d) => d.isGateway)
+    ?? { ip: state.data.gateway ?? 'Router', mac: '', type: 'router', isGateway: true, reasons: ['Default gateway'], clues: {} };
+  const byType = (a, b) => TYPE_ORDER.indexOf(a.type) - TYPE_ORDER.indexOf(b.type) || ipNum(a.ip) - ipNum(b.ip);
+  const others = [...devices.filter((d) => d !== router).sort(byType), ...(state.data.offline ?? []).sort(byType)];
+  const inner = others.slice(0, 12), outer = others.slice(12);
+  const R1 = outer.length ? 220 : 280, R2 = 365;
+  const place = (list, r, offset) => list.map((d, i) => {
+    const a = -Math.PI / 2 + offset + (i / list.length) * Math.PI * 2;
+    return { d, x: Math.cos(a) * r, y: Math.sin(a) * r };
+  });
+  const nodes = [...place(inner, R1, 0), ...place(outer, R2, outer.length ? Math.PI / outer.length : 0)];
+  return { router, others, nodes };
+}
+
+function renderMap(newMacs) {
+  stopSpring();
+  const svg = $('web');
+  svg.replaceChildren();
+  const { router, others, nodes: defaults } = layout();
+  const nodes = defaults.map((n) => (positions[n.d.mac] ? { ...n, x: positions[n.d.mac][0], y: positions[n.d.mac][1] } : n));
+  const [rx, ry] = positions.router ?? [0, 0];
+  const nodeR = others.length > 24 ? 24 : others.length > 12 ? 30 : 38;
+
+  const defs = el('defs', {}, svg);
+  const halo = el('radialGradient', { id: 'halo' }, defs);
+  el('stop', { offset: '0', style: 'stop-color: var(--accent); stop-opacity: .22' }, halo);
+  el('stop', { offset: '1', style: 'stop-color: var(--accent); stop-opacity: 0' }, halo);
+
+  // Links from the router to each device.
+  const links = el('g', {}, svg);
+  for (const n of nodes) {
+    el('line', { class: `link${n.d.isSelf ? ' self' : ''}${n.d.status === 'offline' ? ' offline' : ''}`, 'data-mac': n.d.mac, x1: rx, y1: ry, x2: n.x.toFixed(1), y2: n.y.toFixed(1) }, links);
+  }
+
+  // Nodes.
+  const drawNode = (d, x, y, r, extra) => {
+    const g = el('g', { class: `node ${extra}`, 'data-mac': d.mac, 'data-key': nodeKey(d), transform: `translate(${x.toFixed(1)} ${y.toFixed(1)})`, tabindex: 0, 'aria-label': `${typeOf(d).label} ${d.ip}` }, svg);
+    if (d.isGateway) el('circle', { class: 'halo', r: r * 2.6 }, g);
+    el('circle', { class: 'ripple', r }, g);
+    const body = el('g', { class: 'body' }, g);
+    el('circle', { class: 'disc', r }, body);
+    el('text', { class: 'ico', 'font-size': Math.round(r * 0.9) }, body).textContent = typeOf(d).icon;
+    const lbl = el('text', { class: 'lbl', y: r + 24 }, g);
+    if (d.isGateway) {
+      lbl.textContent = 'Router';
+      el('tspan', { x: 0, dy: 20, class: 'ip' }, lbl).textContent = d.ip;
+    } else {
+      lbl.textContent = d.isSelf ? 'This Mac ' : `${typeOf(d).label} `;
+      el('tspan', { class: 'ip' }, lbl).textContent = `.${d.ip.split('.').pop()}`;
+    }
+    return g;
+  };
+  for (const n of nodes) {
+    drawNode(n.d, n.x, n.y, nodeR, [n.d.isSelf && 'self', n.d.status === 'offline' && 'offline', newMacs.has(n.d.mac) && 'new'].filter(Boolean).join(' '));
+  }
+  drawNode(router, rx, ry, 56, 'router');
+  svg.classList.toggle('scanning', scanning && connected);
+
+  if (!others.length) {
+    el('text', { class: 'map-empty', x: rx, y: ry + 140 }, svg).textContent = 'No other devices found';
+  }
+  const off = state.data.offline?.length ?? 0;
+  const on = state.data.devices.length;
+  $('mapNote').textContent = `${on} online${off ? ` · ${off} offline` : ''}`;
+}
+
+// Move a node and the line(s) attached to it.
+function moveNode(g, x, y) {
+  g.setAttribute('transform', `translate(${x.toFixed(1)} ${y.toFixed(1)})`);
+  if (g.dataset.key === 'router') {
+    document.querySelectorAll('#web .link').forEach((l) => { l.setAttribute('x1', x.toFixed(1)); l.setAttribute('y1', y.toFixed(1)); });
+  } else {
+    document.querySelectorAll(`#web .link[data-mac="${CSS.escape(g.dataset.mac)}"]`).forEach((l) => { l.setAttribute('x2', x.toFixed(1)); l.setAttribute('y2', y.toFixed(1)); });
+  }
+}
+const nodePos = (g) => { const m = g.transform.baseVal.consolidate()?.matrix; return m ? [m.e, m.f] : [0, 0]; };
+
+/* ---------------- Springs (critically damped, Apple "response" 0.4 s) ---------------- */
+// Each item carries its own start, target and velocity, so a node grabbed mid-flight just drops out
+// of the animation and continues from where it is on screen.
+let springs = [], springFrame = 0;
+function springTo(items, { response = 0.4 } = {}) {
+  const w = (2 * Math.PI) / response;
+  const t0 = performance.now();
+  for (const it of items) {
+    springs = springs.filter((s) => s.g !== it.g);
+    springs.push({ ...it, t0, w, v: it.v ?? [0, 0] });
+  }
+  if (reducedMotion.matches) { for (const s of springs) moveNode(s.g, ...s.to); springs = []; return; }
+  if (!springFrame) springFrame = requestAnimationFrame(stepSprings);
+}
+function stepSprings(now) {
+  springs = springs.filter((s) => {
+    const t = (now - s.t0) / 1000;
+    const decay = Math.exp(-s.w * t);
+    const pos = [0, 1].map((i) => {
+      const x0 = s.from[i] - s.to[i];
+      return s.to[i] + (x0 + (s.v[i] + s.w * x0) * t) * decay; // x(t) for a critically damped spring
+    });
+    const settled = decay * (1 + s.w * t) < 0.001;
+    moveNode(s.g, ...(settled ? s.to : pos));
+    return !settled;
+  });
+  springFrame = springs.length ? requestAnimationFrame(stepSprings) : 0;
+}
+function stopSpring(g) {
+  if (g) { springs = springs.filter((s) => s.g !== g); return; }
+  springs = []; cancelAnimationFrame(springFrame); springFrame = 0;
+}
+
+/* ---------------- Dragging devices around ---------------- */
+let drag = null, pendingMap = null;
+const svgPoint = (e) => new DOMPoint(e.clientX, e.clientY).matrixTransform($('web').getScreenCTM().inverse());
+// Past the edge, the node follows less and less (rubber band) instead of stopping dead.
+const rubber = (v) => {
+  const over = Math.abs(v) - BOUND;
+  if (over <= 0) return v;
+  return Math.sign(v) * (BOUND + (over * 120 * 0.55) / (120 + 0.55 * over));
+};
+const clampB = (v) => Math.max(-BOUND, Math.min(BOUND, v));
+
+$('web').addEventListener('pointerdown', (e) => {
+  const g = e.target.closest('.node');
+  if (!g || e.button !== 0) return;
+  stopSpring(g);                       // grab it mid-flight: start from where it is on screen
+  const [x, y] = nodePos(g);
+  const p = svgPoint(e);
+  drag = { g, key: g.dataset.key, dx: x - p.x, dy: y - p.y, x, y, sx: e.clientX, sy: e.clientY, moved: false, hist: [] };
+  $('web').appendChild(g);             // bring to front
+  g.classList.add('dragging');         // instant press feedback
+  g.setPointerCapture(e.pointerId);
+  hideTip();
+  e.preventDefault();
+});
+$('web').addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 3) return;
+  drag.moved = true;
+  const p = svgPoint(e);
+  drag.x = rubber(p.x + drag.dx); drag.y = rubber(p.y + drag.dy);
+  drag.hist.push({ t: e.timeStamp, x: drag.x, y: drag.y });
+  if (drag.hist.length > 5) drag.hist.shift();
+  moveNode(drag.g, drag.x, drag.y);
+});
+const endDrag = () => {
+  if (!drag) return;
+  const { g, key, moved, hist } = drag;
+  g.classList.remove('dragging');
+  if (moved) {
+    const to = [clampB(drag.x), clampB(drag.y)];
+    positions[key] = to.map(Math.round);
+    savePositions();
+    if (to[0] !== drag.x || to[1] !== drag.y) {
+      // Released past the edge: spring back in, carrying the finger's velocity.
+      const a = hist[0], b = hist[hist.length - 1];
+      const dt = Math.max(1, b.t - a.t) / 1000;
+      springTo([{ g, from: [drag.x, drag.y], to, v: [(b.x - a.x) / dt, (b.y - a.y) / dt] }]);
+    }
+  }
+  drag = null;
+  if (pendingMap) { renderMap(pendingMap); pendingMap = null; }
+};
+$('web').addEventListener('pointerup', endDrag);
+$('web').addEventListener('pointercancel', endDrag);
+
+// Reset: every moved node springs home from wherever it is now.
+$('resetLayout').addEventListener('click', () => {
+  positions = {};
+  savePositions();
+  if (!state.data) return;
+  const { nodes } = layout();
+  const home = new Map(nodes.map((n) => [n.d.mac, [n.x, n.y]]));
+  const items = [...document.querySelectorAll('#web .node')].map((g) => ({
+    g, from: nodePos(g), to: g.dataset.key === 'router' ? [0, 0] : home.get(g.dataset.mac) ?? nodePos(g),
+  }));
+  springTo(items);
+});
+savePositions();
+
+/* ---------------- Hover: popover + cross-highlight ---------------- */
+function deviceByMac(mac) {
+  return (state.data && allDevices().find((d) => d.mac === mac))
+    ?? (state.data && mac === '' ? { ip: state.data.gateway, mac: '', type: 'router', reasons: ['Default gateway'], clues: {} } : null);
+}
+
+function highlight(mac, on) {
+  document.querySelectorAll(`[data-mac="${CSS.escape(mac)}"]`).forEach((n) => n.classList.toggle('hl', on));
+}
+
+let tipFor = null;
+function showTip(d, x, y) {
+  const tip = $('tip');
+  if (tipFor !== d) {
+    tipFor = d;
+    const t = typeOf(d);
+    const c = d.clues ?? {};
+    const extra = [
+      c.hostname && `Name: ${esc(c.hostname)}`,
+      c.vendor && `Maker: ${esc(c.vendor)}`,
+      d.randomizedMac && 'Uses a private (randomized) MAC',
+      d.status === 'offline' && `Offline · last seen ${fmtTime(d.lastSeen)}`,
+      d.status === 'online' && d.missed > 0 && `Didn't answer the last ${d.missed === 1 ? 'scan' : `${d.missed} scans`}`,
+    ].filter(Boolean);
+    tip.innerHTML = `
+      <h3>${t.icon} ${esc(t.label)} ${d.confidence ? `<span class="tag">${esc(d.confidence)} confidence</span>` : ''}</h3>
+      <div class="kv mono">${esc(d.ip)}${d.mac ? ` · ${esc(d.mac)}` : ''}</div>
+      ${extra.length ? `<div class="kv">${extra.join('<br>')}</div>` : ''}
+      ${d.reasons?.length ? `<ul>${d.reasons.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}`;
+  }
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  tip.style.left = `${Math.min(x + 16, innerWidth - w - 8)}px`;
+  tip.style.top = `${Math.min(y + 16, innerHeight - h - 8)}px`;
+  tip.classList.add('show');
+}
+const hideTip = () => { tipFor = null; $('tip').classList.remove('show'); };
+
+function bindHover(container, selector) {
+  let current = null;
+  container.addEventListener('mousemove', (e) => {
+    if (drag) return;
+    const target = e.target.closest(selector);
+    const mac = target?.dataset.mac ?? null;
+    if (mac !== current) {
+      if (current !== null) highlight(current, false);
+      current = mac;
+      if (mac !== null) highlight(mac, true);
+    }
+    const d = mac !== null ? deviceByMac(mac) : null;
+    d ? showTip(d, e.clientX, e.clientY) : hideTip();
+  });
+  container.addEventListener('mouseleave', () => { if (current !== null) highlight(current, false); current = null; hideTip(); });
+}
+
+/* ---------------- Scan data ---------------- */
+function applyScan(data) {
+  const newMacs = new Set(data.joined ?? []); // the server decides what's new (vs. data/known.json)
+  state.data = data;
+  $('subnet').textContent = `${data.interface} · ${data.subnet}`;
+  $('scanned').textContent = `Updated ${new Date(data.scannedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+  renderLegend();
+  renderList();
+  if (drag) pendingMap = newMacs; else renderMap(newMacs);
+}
+
+/* ---------------- Join notifications ---------------- */
+function toast(icon, html, ms = 8000) {
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.innerHTML = `<span class="ticon">${icon}</span><div>${html}</div>`;
+  const close = () => { t.classList.add('out'); setTimeout(() => t.remove(), 350); };
+  t.addEventListener('click', close);
+  $('toasts').appendChild(t);
+  setTimeout(close, ms);
+}
+function onJoined(d) {
+  const t = typeOf(d);
+  toast(t.icon, `<b>New device: ${esc(t.label)}</b><span class="mono">${esc(d.ip)} · ${esc(d.mac)}</span>`);
+  if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+    new Notification('Loknet: new device', { body: `${t.icon} ${t.label} · ${d.ip} · ${d.mac}`, tag: d.mac });
+  }
+}
+// Browsers only allow the permission prompt after a click, so it sits behind a button.
+const notifySupported = 'Notification' in window;
+function updateNotifyBtn() { $('notifyBtn').hidden = !notifySupported || Notification.permission !== 'default'; }
+$('notifyBtn').addEventListener('click', () => {
+  Notification.requestPermission().catch(() => {}).finally(updateNotifyBtn);
+});
+updateNotifyBtn();
+
+/* ---------------- Live speed ---------------- */
+const history = [];
+function fmtRate(bps) {
+  const m = bps / 1e6; // always Mbps
+  if (m > 0 && m < 0.005) return ['<0.01', 'Mbps'];
+  return [m.toFixed(m >= 100 ? 0 : m >= 10 ? 1 : 2), 'Mbps'];
+}
+function onSpeed(s) {
+  const [dv, du] = fmtRate(s.down), [uv, uu] = fmtRate(s.up);
+  $('down').textContent = dv; $('downU').textContent = du;
+  $('up').textContent = uv; $('upU').textContent = uu;
+  $('speedIface').textContent = `This Mac · ${s.interface}`;
+  history.push(s);
+  if (history.length > 60) history.shift();
+  const max = Math.max(1e5, ...history.map((h) => Math.max(h.down, h.up)));
+  const x0 = 60 - history.length;
+  const pts = (key) => history.map((h, i) => `${i + x0},${(40 - (h[key] / max) * 34).toFixed(2)}`).join(' ');
+  const d = pts('down'), u = pts('up');
+  const close = ` 59,40 ${x0},40`;
+  $('sparkD').setAttribute('points', d); $('areaD').setAttribute('points', d + close);
+  $('sparkU').setAttribute('points', u); $('areaU').setAttribute('points', u + close);
+}
+
+/* ---------------- Live connection ---------------- */
+let connected = false, scanning = false;
+function setLive() {
+  $('dot').className = !connected ? 'dot' : scanning ? 'dot busy' : 'dot live';
+  $('status').textContent = !connected ? 'Reconnecting…' : scanning ? 'Scanning' : 'Live';
+  $('web').classList.toggle('scanning', connected && scanning);
+}
+function connect() {
+  const es = new EventSource('/api/events');
+  es.onopen = () => { connected = true; setLive(); };
+  es.onerror = () => { connected = false; setLive(); };
+  es.addEventListener('speed', (e) => onSpeed(JSON.parse(e.data)));
+  es.addEventListener('device-joined', (e) => onJoined(JSON.parse(e.data)));
+  es.addEventListener('scanning', () => { scanning = true; setLive(); });
+  es.addEventListener('scan-error', (e) => {
+    scanning = false; setLive();
+    if (!state.data) $('rows').innerHTML = `<tr><td colspan="3" class="empty error">Scan failed: ${esc(JSON.parse(e.data).error)}</td></tr>`;
+  });
+  es.addEventListener('scan', (e) => {
+    const data = JSON.parse(e.data);
+    scanning = false; setLive();
+    if (data.scannedAt !== state.data?.scannedAt) applyScan(data);
+  });
+}
+
+/* ---------------- Wire up ---------------- */
+$('filter').addEventListener('change', (e) => { state.filter = e.target.value; renderList(); });
+document.querySelectorAll('th[data-sort]').forEach((th) => th.addEventListener('click', () => {
+  const key = th.dataset.sort;
+  state.sort = { key, dir: state.sort.key === key ? -state.sort.dir : 1 };
+  renderList();
+}));
+$('rows').addEventListener('click', async (e) => {
+  const btn = e.target.closest('.copy');
+  if (!btn) return;
+  try { await navigator.clipboard.writeText(btn.dataset.copy); btn.textContent = '✓'; } catch { btn.textContent = '✕'; }
+  btn.classList.add('done');
+  setTimeout(() => { btn.textContent = '⧉'; btn.classList.remove('done'); }, 1200);
+});
+bindHover($('rows'), 'tr[data-mac]');
+bindHover($('web'), '.node');
+
+fetch('/api/types').then((r) => r.json()).then((t) => { TYPES = t; }).finally(connect); // the server scans every 30 s and pushes results
+</script>
+</body>
+</html>
