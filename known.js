@@ -1,23 +1,40 @@
-// Remembers every device ever seen (data/known.json, keyed by MAC) and works out
-// which devices joined, which are still around and which have left.
-import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync } from 'node:fs';
+// Remembers every device ever seen on the current network (data/networks/<id>/known.json, keyed by MAC)
+// and works out which devices joined, which are still around and which have left.
+import { readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
+import { networkDir, ensureDir } from './networks.js';
 
-export const KNOWN_PATH = new URL('./data/known.json', import.meta.url);
-const TMP_PATH = new URL('./data/known.json.tmp', import.meta.url);
+let networkIdNow = null;
+const paths = () => {
+  const dir = networkDir(networkIdNow);
+  return { dir, file: new URL('known.json', dir), tmp: new URL('known.json.tmp', dir) };
+};
 
-const MISSES_TO_LEAVE = 6;                    // absent this many scans in a row (≈3 min at 30 s) → "left"
+/** Switch to another network's device list (call before recordScan / setName). */
+export function useNetwork(id) {
+  if (id === networkIdNow) return;
+  networkIdNow = id;
+  known = null;
+  baseline = false;
+  lastDevice.clear();
+}
+
+// Presence comes from the ARP table, which macOS clears about 2 min after a device stops answering,
+// so a short extra wait is enough (sleeping phones still answer ARP).
+const MISSES_TO_LEAVE = 2;                    // absent this many scans in a row (≈1 min at 30 s) → "left"
 const SHOW_OFFLINE_MS = 24 * 60 * 60 * 1000;  // keep showing devices that left within the last day
 
-let known = null;          // { [mac]: { firstSeen, lastSeen, ip, type, missed } }
+let known = null;          // { [mac]: { firstSeen, lastSeen, ip, type, missed, name? } }
 let baseline = false;      // true until the first scan has been recorded
 const lastDevice = new Map(); // mac → full device object from the latest scan it appeared in (memory only)
 
 // Re-read on every scan so hand edits to known.json take effect without a restart.
 // No file → this scan becomes the baseline (no alerts for devices already there).
 function load() {
-  if (existsSync(KNOWN_PATH)) {
+  if (!networkIdNow) throw new Error('known.js: useNetwork() was not called');
+  const { file } = paths();
+  if (existsSync(file)) {
     try {
-      known = JSON.parse(readFileSync(KNOWN_PATH, 'utf8'));
+      known = JSON.parse(readFileSync(file, 'utf8'));
       return;
     } catch (err) {
       console.warn(`Could not read known.json (${err.message}); keeping the copy in memory.`);
@@ -32,9 +49,10 @@ function save() {
   // Atomic: write a temp file, then rename over the real one. Synchronous (the file is tiny),
   // so the next scan's load() always sees the latest state.
   try {
-    mkdirSync(new URL('./data/', import.meta.url), { recursive: true });
-    writeFileSync(TMP_PATH, JSON.stringify(known, null, 2));
-    renameSync(TMP_PATH, KNOWN_PATH);
+    const { dir, file, tmp } = paths();
+    ensureDir(dir);
+    writeFileSync(tmp, JSON.stringify(known, null, 2), { mode: 0o600 }); // private to this user
+    renameSync(tmp, file);
   } catch (err) {
     console.warn(`Could not save known.json: ${err.message}`);
   }
@@ -90,10 +108,22 @@ export function recordScan(result) {
   baseline = false;
   save();
 
+  // Attach the user's own names (set with setName) to everything the page shows.
+  const named = (d) => ({ ...d, name: known[d.mac]?.name ?? null });
   return {
-    scan: { ...result, devices, offline, joined: joined.map((d) => d.mac) },
+    scan: { ...result, devices: devices.map(named), offline: offline.map(named), joined: joined.map((d) => d.mac) },
     joined,
     left,
     returned,
   };
+}
+
+/** Gives a known device the user's own name (an empty name removes it). Returns false for an unknown MAC. */
+export function setName(mac, name) {
+  load();
+  const k = known[mac];
+  if (!k) return false;
+  if (name) k.name = name; else delete k.name;
+  save();
+  return true;
 }

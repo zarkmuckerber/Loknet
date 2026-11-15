@@ -1,5 +1,4 @@
 node_modules/
-data/*.json
-data/oui.csv
+# Personal data (device lists, names, history, trusted networks) never goes into git.
+data/
 .DS_Store
-data/*.tmp

@@ -87,6 +87,16 @@ Original plan, for reference:
 - UI redesign (Apple-style frosted panels, spring drag, Reset layout), no Scan button (fully live, 30 s scans), speed always in Mbps, one-line header.
 - **History:** `history.js` → `data/history.json` (newest first, max 200). known.js now also returns `returned` (back after being marked left). The server sends `history` on SSE connect and `history-add` after scans. In the UI, the 🕘 History button in the header opens a popover, and a badge shows unseen events (localStorage `loknet.historySeen`).
 
+- **Rename devices:** `setName()` in known.js stores `name` per MAC, and `recordScan` attaches `name` to every device in the payload. `POST /api/name {mac, name}` (JSON only, same-origin check, max 40 chars) broadcasts `rename`. In the UI: ✎ on row hover, double-click a name or map node, inline input (Enter saves, Esc cancels, empty clears). While editing, list re-renders are deferred.
+
+- **Fixes:** the notifications button is always visible and shows its state (Enable / on / blocked, with a how-to toast). `MISSES_TO_LEAVE` went from 6 to 2, because presence comes from the macOS ARP table, which already drops a gone device after about 2 min.
+
+- **Security hardening** (threat model: `loknet-threat-model.md`, made with the openai `security-threat-model` skill, installed globally):
+  - **server.js:** Host allow-list (421), `Sec-Fetch-Site` block on `/api/*`, security headers + nonce CSP on `/`, SSE cap 20, write rate limit, generic 500, 10 s request timeouts.
+  - **networks.js:** trusted networks keyed by gateway MAC. The first network is auto-trusted, and the legacy `data/known.json`/`history.json` are moved to `data/networks/<id>/`. Untrusted = passive mode (`scan({ decideMode })` skips port probes and SSDP fetches; nothing is saved). `POST /api/trust`.
+  - **ssdp.js:** no redirects, 200 KB streamed cap, in-subnet only, 64-responder cap. **mdns.js:** bounds checks plus per-host and per-set caps. **scanner.js:** clips device strings to 64 characters.
+  - `data/` is 700/600 and git-ignored entirely.
+
 ## Still unverified / worth doing
 - **Open the UI in a real browser** (http://localhost:3000 after `npm start`) and check the map layout, dark mode, the narrow-width stacking (breakpoints at 1150 px and 700 px) and the tooltips. So far only `node --check` has been run on the page script.
 - Emoji icons assume macOS (🛜 needs macOS 14 or newer; the machine is on Darwin 24 = macOS 15).

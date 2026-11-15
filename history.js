@@ -1,16 +1,30 @@
-// Log of network events (joined / left / back online), kept in data/history.json, newest first.
-import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync } from 'node:fs';
+// Log of network events (joined / left / back online) for the current network,
+// kept in data/networks/<id>/history.json, newest first.
+import { readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
+import { networkDir, ensureDir } from './networks.js';
 
-const HISTORY_PATH = new URL('./data/history.json', import.meta.url);
-const TMP_PATH = new URL('./data/history.json.tmp', import.meta.url);
 const MAX_EVENTS = 200;
 
 let history = null;
+let networkIdNow = null;
+const paths = () => {
+  const dir = networkDir(networkIdNow);
+  return { dir, file: new URL('history.json', dir), tmp: new URL('history.json.tmp', dir) };
+};
+
+/** Switch to another network's log. */
+export function useNetwork(id) {
+  if (id === networkIdNow) return;
+  networkIdNow = id;
+  history = null;
+}
 
 function load() {
   if (history) return history;
+  if (!networkIdNow) return [];
   try {
-    history = existsSync(HISTORY_PATH) ? JSON.parse(readFileSync(HISTORY_PATH, 'utf8')) : [];
+    const { file } = paths();
+    history = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : [];
     if (!Array.isArray(history)) history = [];
   } catch (err) {
     console.warn(`Could not read history.json (${err.message}); starting a new log.`);
@@ -22,9 +36,10 @@ function load() {
 function save() {
   // Atomic: write a temp file, then rename over the real one.
   try {
-    mkdirSync(new URL('./data/', import.meta.url), { recursive: true });
-    writeFileSync(TMP_PATH, JSON.stringify(history, null, 2));
-    renameSync(TMP_PATH, HISTORY_PATH);
+    const { dir, file, tmp } = paths();
+    ensureDir(dir);
+    writeFileSync(tmp, JSON.stringify(history, null, 2), { mode: 0o600 }); // private to this user
+    renameSync(tmp, file);
   } catch (err) {
     console.warn(`Could not save history.json: ${err.message}`);
   }

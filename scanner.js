@@ -106,19 +106,41 @@ async function localHostName() {
   }
 }
 
-/** Run a full scan of the local network. */
-export async function scan() {
+// Everything below comes from other devices on the network, which may be hostile on public Wi-Fi.
+// Keep it short so it can't bloat memory or the page.
+const clip = (s, n = 64) => (typeof s === 'string' ? s.slice(0, n) : s ?? null);
+
+/** The router's MAC: identifies which network we're on (before we probe anything). */
+async function gatewayMac(net) {
+  let mac = (await readArpTable(net.interface)).get(net.gateway);
+  if (!mac && net.gateway) {
+    await ping(net.gateway);
+    mac = (await readArpTable(net.interface)).get(net.gateway);
+  }
+  return mac ?? null;
+}
+
+/**
+ * Run a scan of the local network.
+ * decideMode({ gatewayMac, gateway, subnet }) returns 'full' or 'passive'. Passive mode (untrusted
+ * networks) only pings, reads ARP and listens to Bonjour/UPnP announcements: no port probes and no
+ * HTTP requests to other people's devices.
+ */
+export async function scan({ decideMode = () => 'full' } = {}) {
   const started = Date.now();
   const net = await getNetworkInfo();
+  const gwMac = await gatewayMac(net);
+  const mode = await decideMode({ gatewayMac: gwMac, gateway: net.gateway, subnet: net.subnet });
+  const passive = mode !== 'full';
+  const inSubnet = new Set(net.hosts);
 
   // Bonjour and UPnP listen for a few seconds; run them alongside the ping sweep.
   const [replies, mdns, ssdp] = await Promise.all([
     pingSweep(net.hosts.filter((ip) => ip !== net.ip)),
     discoverMdns(net.ip),
-    discoverSsdp(net.ip),
+    discoverSsdp(net.ip, { fetchDescriptions: !passive, inSubnet: (ip) => inSubnet.has(ip) }),
   ]);
   const arp = await readArpTable(net.interface);
-  const inSubnet = new Set(net.hosts);
 
   const devices = [...arp]
     .filter(([ip]) => inSubnet.has(ip) && ip !== net.ip)
@@ -145,17 +167,17 @@ export async function scan() {
 
   // Per-device probes (our own machine is skipped: we know what it is).
   const remoteIps = devices.filter((d) => !d.isSelf).map((d) => d.ip);
-  const [ports, rdns] = await Promise.all([scanPorts(remoteIps), reverseLookup(remoteIps)]);
+  const [ports, rdns] = await Promise.all([passive ? new Map() : scanPorts(remoteIps), reverseLookup(remoteIps)]);
 
   for (const d of devices) {
     const m = mdns.get(d.ip);
     const u = ssdp.get(d.ip);
     d.clues = {
       vendor: d.randomizedMac ? null : lookupVendor(d.mac),
-      hostname: (d.isSelf ? null : rdns.get(d.ip)) ?? [...(m?.hostnames ?? [])][0] ?? (d.isSelf ? await localHostName() : null),
-      names: [...(m?.names ?? [])].filter((n) => !n.includes('@')),
-      services: [...(m?.services ?? [])].sort(),
-      model: m?.model ?? null,
+      hostname: clip((d.isSelf ? null : rdns.get(d.ip)) ?? [...(m?.hostnames ?? [])][0] ?? (d.isSelf ? await localHostName() : null)),
+      names: [...(m?.names ?? [])].filter((n) => !n.includes('@')).slice(0, 8).map((n) => clip(n)),
+      services: [...(m?.services ?? [])].sort().slice(0, 32),
+      model: clip(m?.model),
       ports: ports.get(d.ip) ?? [],
       upnp: u ? { ...u, types: [...u.types] } : null,
     };
@@ -168,6 +190,8 @@ export async function scan() {
     interface: net.interface,
     subnet: net.subnet,
     gateway: net.gateway,
+    gatewayMac: gwMac,
+    mode: passive ? 'passive' : 'full',
     scannedAt: new Date().toISOString(),
     durationMs: Date.now() - started,
     devices,

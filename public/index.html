@@ -210,6 +210,21 @@
   tr:hover .copy, .copy:focus-visible, .copy.done { opacity: 1; }
   .copy:hover { color: var(--accent); background: var(--accent-fill); }
   .copy:active { transform: scale(.9); }
+  td.tcell { position: relative; }
+  .type .nm { max-width: 128px; overflow: hidden; text-overflow: ellipsis; }
+  .rename {
+    position: absolute; right: 0; top: 50%; translate: 0 -50%;
+    font: inherit; font-size: 12px; background: var(--solid); border: 0; color: var(--faint); cursor: pointer;
+    padding: 2px 6px; border-radius: 6px; opacity: 0; box-shadow: 0 0 0 .5px var(--hair);
+    transition: opacity .15s, color .15s, transform .12s var(--spring);
+  }
+  tr:hover .rename, .rename:focus-visible { opacity: 1; }
+  .rename:hover { color: var(--accent); background: var(--accent-fill); }
+  .rename:active { transform: scale(.9); }
+  .name-input {
+    font: inherit; font-weight: 500; color: var(--text); width: 118px; padding: 2px 7px; margin: -3px 0;
+    border: 0; border-radius: 7px; background: var(--solid); box-shadow: 0 0 0 2px var(--accent); outline: none;
+  }
   .empty { padding: 32px 14px; text-align: center; color: var(--muted); border-top: 0 !important; }
   .error { color: var(--danger); }
 
@@ -227,6 +242,9 @@
 
   /* ---------- History popover (opens from its button) ---------- */
   .actions { display: flex; gap: 8px; align-items: center; }
+  .pill[hidden] { display: none; }
+  .pill.warn { background: color-mix(in srgb, var(--up) 18%, transparent); color: var(--text); }
+  .pill.warn .dot { background: var(--up); }
   .badge {
     display: inline-block; min-width: 17px; margin-left: 2px; padding: 0 5px; border-radius: 99px;
     background: var(--accent); color: #fff; font-size: 10.5px; font-weight: 650; line-height: 17px; text-align: center;
@@ -316,12 +334,14 @@
     <h1>Loknet</h1>
     <div class="meta">
       <span class="pill"><span class="dot" id="dot"></span><span id="status">Connecting…</span></span>
+      <span class="pill warn" id="modePill" hidden title="This isn't one of your trusted networks, so Loknet only listens: no port probes, no alerts, nothing saved."><span class="dot"></span>Passive · not your network</span>
       <span id="subnet"></span><span id="scanned"></span>
     </div>
   </div>
   <div class="actions">
+  <button class="capsule" id="trustBtn" hidden title="Only trust networks you own or manage (like home). Loknet will then probe devices, save them and alert you about new ones.">🛡 Trust this network</button>
   <button class="capsule quiet" id="historyBtn" aria-expanded="false" aria-controls="historyPop">🕘 History <span class="badge" id="historyBadge" hidden></span></button>
-  <button class="capsule" id="notifyBtn" hidden title="Show a macOS notification when a device joins while this tab is in the background">🔔 Enable notifications</button>
+  <button class="capsule" id="notifyBtn" hidden>🔔 Enable notifications</button>
   </div>
 </header>
 <div id="historyPop" role="dialog" aria-label="History" tabindex="-1">
@@ -391,11 +411,16 @@ const allDevices = () => [...state.data.devices, ...(state.data.offline ?? [])];
 const fmtTime = (iso) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
 const typeOf = (d) => TYPES[d.type] ?? { label: d.type, icon: '❔' };
+// The user's own name for a device (set with ✎), looked up by MAC so History rows get it too.
+const nameOf = (mac) => (state.data && allDevices().find((d) => d.mac === mac)?.name) || null;
+const short = (s, n = 18) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
 /* ---------------- Device list ---------------- */
+let editing = null, pendingList = false; // MAC being renamed: list re-renders wait until it's done
 function renderList() {
   const { data, sort, filter } = state;
   if (!data) return;
+  if (editing) { pendingList = true; return; }
   const order = (t) => TYPE_ORDER.indexOf(t);
   const rows = allDevices()
     .filter((d) => !filter || d.type === filter)
@@ -407,7 +432,8 @@ function renderList() {
     });
   $('rows').innerHTML = rows.length ? rows.map((d) => `
     <tr data-mac="${esc(d.mac)}" class="${d.status === 'offline' ? 'offline' : ''}">
-      <td><span class="type ${d.confidence === 'low' ? 'conf-low' : ''}"><span class="ico">${typeOf(d).icon}</span>${esc(typeOf(d).label)}</span>${
+      <td class="tcell"><span class="type ${d.confidence === 'low' ? 'conf-low' : ''}"><span class="ico">${typeOf(d).icon}</span><span class="nm" title="${esc(d.name ? `${d.name} (${typeOf(d).label})` : '')}">${esc(d.name || typeOf(d).label)}</span></span>${
+        d.mac && data.network?.trusted !== false ? `<button class="rename" data-mac="${esc(d.mac)}" title="Rename" aria-label="Rename">✎</button>` : ''}${
         d.isSelf ? '<span class="tag strong">You</span>' : ''}${
         d.status === 'offline' ? `<span class="tag">Offline · ${fmtTime(d.lastSeen)}</span>` : ''}</td>
       <td class="mono">${esc(d.ip)}</td>
@@ -489,7 +515,7 @@ function renderMap(newMacs) {
 
   // Nodes.
   const drawNode = (d, x, y, r, extra) => {
-    const g = el('g', { class: `node ${extra}`, 'data-mac': d.mac, 'data-key': nodeKey(d), transform: `translate(${x.toFixed(1)} ${y.toFixed(1)})`, tabindex: 0, 'aria-label': `${typeOf(d).label} ${d.ip}` }, svg);
+    const g = el('g', { class: `node ${extra}`, 'data-mac': d.mac, 'data-key': nodeKey(d), transform: `translate(${x.toFixed(1)} ${y.toFixed(1)})`, tabindex: 0, 'aria-label': `${d.name || typeOf(d).label} ${d.ip}` }, svg);
     if (d.isGateway) el('circle', { class: 'halo', r: r * 2.6 }, g);
     el('circle', { class: 'ripple', r }, g);
     const body = el('g', { class: 'body' }, g);
@@ -497,10 +523,10 @@ function renderMap(newMacs) {
     el('text', { class: 'ico', 'font-size': Math.round(r * 0.9) }, body).textContent = typeOf(d).icon;
     const lbl = el('text', { class: 'lbl', y: r + 24 }, g);
     if (d.isGateway) {
-      lbl.textContent = 'Router';
+      lbl.textContent = d.name ? short(d.name) : 'Router';
       el('tspan', { x: 0, dy: 20, class: 'ip' }, lbl).textContent = d.ip;
     } else {
-      lbl.textContent = d.isSelf ? 'This Mac ' : `${typeOf(d).label} `;
+      lbl.textContent = d.name ? `${short(d.name)} ` : d.isSelf ? 'This Mac ' : `${typeOf(d).label} `;
       el('tspan', { class: 'ip' }, lbl).textContent = `.${d.ip.split('.').pop()}`;
     }
     return g;
@@ -657,7 +683,7 @@ function showTip(d, x, y) {
       d.status === 'online' && d.missed > 0 && `Didn't answer the last ${d.missed === 1 ? 'scan' : `${d.missed} scans`}`,
     ].filter(Boolean);
     tip.innerHTML = `
-      <h3>${t.icon} ${esc(t.label)} ${d.confidence ? `<span class="tag">${esc(d.confidence)} confidence</span>` : ''}</h3>
+      <h3>${t.icon} ${esc(d.name || t.label)} ${d.name ? `<span class="tag">${esc(t.label)}</span>` : ''}${d.confidence ? `<span class="tag">${esc(d.confidence)} confidence</span>` : ''}</h3>
       <div class="kv mono">${esc(d.ip)}${d.mac ? ` · ${esc(d.mac)}` : ''}</div>
       ${extra.length ? `<div class="kv">${extra.join('<br>')}</div>` : ''}
       ${d.reasons?.length ? `<ul>${d.reasons.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}`;
@@ -690,12 +716,91 @@ function bindHover(container, selector) {
 function applyScan(data) {
   const newMacs = new Set(data.joined ?? []); // the server decides what's new (vs. data/known.json)
   state.data = data;
+  const untrusted = data.network?.trusted === false;
+  $('modePill').hidden = !untrusted;
+  $('trustBtn').hidden = !untrusted;
+  $('historyBtn').hidden = untrusted;
+  if (untrusted) closeHistory(false);
   $('subnet').textContent = `${data.interface} · ${data.subnet}`;
   $('scanned').textContent = `Updated ${new Date(data.scannedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
   renderLegend();
   renderList();
   if (drag) pendingMap = newMacs; else renderMap(newMacs);
 }
+
+/* ---------------- Renaming devices ---------------- */
+function startRename(mac) {
+  if (!mac || editing === mac) return;
+  if (editing) finishRename(true);
+  const rowFor = () => document.querySelector(`#rows tr[data-mac="${CSS.escape(mac)}"]`);
+  if (!rowFor() && state.filter) { $('filter').value = ''; state.filter = ''; renderList(); } // hidden by the type filter
+  const row = rowFor();
+  const nm = row?.querySelector('.nm');
+  if (!nm) return;
+  const d = deviceByMac(mac);
+  editing = mac;
+  hideTip();
+  const input = document.createElement('input');
+  input.className = 'name-input';
+  input.maxLength = 40;
+  input.value = d?.name ?? '';
+  input.placeholder = typeOf(d ?? {}).label;
+  input.setAttribute('aria-label', 'Device name (leave empty to remove)');
+  nm.replaceWith(input);
+  row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  input.focus();
+  input.select();
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); finishRename(true); }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finishRename(false); }
+  });
+  input.addEventListener('blur', () => finishRename(true));
+}
+async function finishRename(save) {
+  if (!editing) return;
+  const mac = editing;
+  const input = document.querySelector('#rows .name-input');
+  const name = input?.value.trim() ?? '';
+  const before = deviceByMac(mac)?.name ?? '';
+  editing = null;
+  pendingList = false;
+  renderList();
+  if (!save || name === before) return;
+  try {
+    const res = await fetch('/api/name', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mac, name }) });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+    // The server broadcasts 'rename' to every open page, including this one.
+  } catch (err) {
+    toast('⚠️', `<b>Couldn't rename</b><span>${esc(err.message)}</span>`, 5000);
+  }
+}
+function onRename({ mac, name }) {
+  if (!state.data) return;
+  for (const d of allDevices()) if (d.mac === mac) d.name = name;
+  tipFor = null;
+  renderList();
+  if (drag) pendingMap = new Set(); else renderMap(new Set());
+  renderHistory();
+}
+
+/* ---------------- Trusting a network ---------------- */
+$('trustBtn').addEventListener('click', async () => {
+  const id = state.data?.network?.id;
+  if (!id) return;
+  const btn = $('trustBtn');
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/trust', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+    btn.hidden = true;
+    $('modePill').hidden = true;
+    toast('🛡', '<b>Network trusted</b><span>Running a full scan. Devices here now are remembered without alerts.</span>', 6000);
+  } catch (err) {
+    toast('⚠️', `<b>Couldn't trust this network</b><span>${esc(err.message)}</span>`, 5000);
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 /* ---------------- Join notifications ---------------- */
 function toast(icon, html, ms = 8000) {
@@ -716,10 +821,29 @@ function onJoined(d) {
 }
 // Browsers only allow the permission prompt after a click, so it sits behind a button.
 const notifySupported = 'Notification' in window;
-function updateNotifyBtn() { $('notifyBtn').hidden = !notifySupported || Notification.permission !== 'default'; }
+// Always visible, showing the current state, so it never just disappears after a refresh.
+const NOTIFY_STATES = {
+  default: { text: '🔔 Enable notifications', quiet: false, title: 'Show a macOS notification when a device joins while this tab is in the background' },
+  granted: { text: '🔔 Notifications on', quiet: true, title: 'You get a macOS notification when a device joins while this tab is in the background' },
+  denied: { text: '🔕 Notifications blocked', quiet: true, title: 'Blocked in this browser. Click for how to turn them back on' },
+};
+function updateNotifyBtn() {
+  const btn = $('notifyBtn');
+  btn.hidden = !notifySupported;
+  if (!notifySupported) return;
+  const st = NOTIFY_STATES[Notification.permission] ?? NOTIFY_STATES.default;
+  btn.textContent = st.text;
+  btn.title = st.title;
+  btn.classList.toggle('quiet', st.quiet);
+}
 $('notifyBtn').addEventListener('click', () => {
-  Notification.requestPermission().catch(() => {}).finally(updateNotifyBtn);
+  const p = Notification.permission;
+  if (p === 'default') return Notification.requestPermission().catch(() => {}).finally(updateNotifyBtn);
+  if (p === 'granted') toast('🔔', '<b>Notifications are on</b><span>To turn them off, click the icon left of the address bar → Notifications.</span>', 6000);
+  else toast('🔕', '<b>Notifications are blocked</b><span>To allow them, click the icon left of the address bar → Notifications → Allow, then reload.</span>', 8000);
 });
+// Pick up changes made in the browser's site settings without a reload.
+navigator.permissions?.query({ name: 'notifications' }).then((s) => { s.onchange = updateNotifyBtn; }).catch(() => {});
 updateNotifyBtn();
 
 /* ---------------- History ---------------- */
@@ -750,7 +874,7 @@ function renderHistory() {
     return `<div class="hrow ${e.kind}" data-mac="${esc(e.mac)}">
       <span class="ico">${t.icon}</span>
       <div class="txt">
-        <div class="what"><i></i>${esc(t.label)} ${KIND[e.kind] ?? esc(e.kind)}</div>
+        <div class="what"><i></i>${esc(nameOf(e.mac) || t.label)} ${KIND[e.kind] ?? esc(e.kind)}</div>
         <div class="sub"><span class="mono">${esc(e.ip)} · ${esc(e.mac)}</span><time datetime="${esc(e.at)}">${fmtWhen(e.at)}</time></div>
       </div>
     </div>`;
@@ -826,6 +950,7 @@ function connect() {
   es.addEventListener('device-joined', (e) => onJoined(JSON.parse(e.data)));
   es.addEventListener('history', (e) => onHistory(JSON.parse(e.data), true));
   es.addEventListener('history-add', (e) => onHistory(JSON.parse(e.data), false));
+  es.addEventListener('rename', (e) => onRename(JSON.parse(e.data)));
   es.addEventListener('scanning', () => { scanning = true; setLive(); });
   es.addEventListener('scan-error', (e) => {
     scanning = false; setLive();
@@ -845,6 +970,17 @@ document.querySelectorAll('th[data-sort]').forEach((th) => th.addEventListener('
   state.sort = { key, dir: state.sort.key === key ? -state.sort.dir : 1 };
   renderList();
 }));
+$('rows').addEventListener('click', (e) => {
+  const btn = e.target.closest('.rename');
+  if (btn) startRename(btn.dataset.mac);
+});
+$('rows').addEventListener('dblclick', (e) => {
+  if (e.target.closest('.nm')) startRename(e.target.closest('tr')?.dataset.mac);
+});
+$('web').addEventListener('dblclick', (e) => {
+  const g = e.target.closest('.node');
+  if (g) startRename(g.dataset.mac);
+});
 $('rows').addEventListener('click', async (e) => {
   const btn = e.target.closest('.copy');
   if (!btn) return;

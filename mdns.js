@@ -43,10 +43,13 @@ function readName(buf, off) {
     if (len === undefined) throw new RangeError('truncated name');
     if (len === 0) { off += 1; break; }
     if ((len & 0xc0) === 0xc0) { // compression pointer
+      if (off + 1 >= buf.length) throw new RangeError('truncated pointer');
       if (end < 0) end = off + 2;
       off = ((len & 0x3f) << 8) | buf[off + 1];
+      if (off >= buf.length) throw new RangeError('pointer out of range');
       continue;
     }
+    if (off + 1 + len > buf.length) throw new RangeError('truncated label');
     labels.push(buf.toString('utf8', off + 1, off + 1 + len));
     off += len + 1;
   }
@@ -92,10 +95,16 @@ const stripLocal = (n) => n.replace(/\.local\.?$/i, '');
 export function discoverMdns(localIp, durationMs = 3000) {
   return new Promise((resolve) => {
     const found = new Map();
+    // Caps keep a flood of crafted replies (e.g. on public Wi-Fi) from growing memory without limit.
+    const MAX_HOSTS = 256, MAX_PER_SET = 32;
     const entry = (ip) => {
-      if (!found.has(ip)) found.set(ip, { services: new Set(), names: new Set(), hostnames: new Set(), model: null });
+      if (!found.has(ip)) {
+        if (found.size >= MAX_HOSTS) return null;
+        found.set(ip, { services: new Set(), names: new Set(), hostnames: new Set(), model: null });
+      }
       return found.get(ip);
     };
+    const add = (set, value) => { if (value && set.size < MAX_PER_SET) set.add(String(value).slice(0, 128)); };
 
     const sock = dgram.createSocket({ type: 'udp4', reuseAddr: true });
     sock.on('error', () => finish());
@@ -103,20 +112,21 @@ export function discoverMdns(localIp, durationMs = 3000) {
       let records;
       try { records = parsePacket(msg); } catch { return; }
       const e = entry(rinfo.address);
+      if (!e) return;
       for (const r of records) {
         if (r.type === T_PTR && r.name === '_services._dns-sd._udp.local') {
-          e.services.add(stripLocal(r.data));
+          add(e.services, stripLocal(r.data));
         } else if (r.type === T_PTR && r.name.startsWith('_')) {
           const svc = stripLocal(r.name);
-          e.services.add(svc);
+          add(e.services, svc);
           const instance = stripLocal(r.data).replace(`.${svc}`, '');
-          if (instance && !instance.startsWith('_')) e.names.add(instance);
+          if (instance && !instance.startsWith('_')) add(e.names, instance);
         } else if (r.type === T_SRV || r.type === T_A) {
           const host = stripLocal(r.type === T_SRV ? r.data : r.name);
-          if (host) e.hostnames.add(host);
+          add(e.hostnames, host);
         } else if (r.type === T_TXT) {
           const model = r.data.find((s) => s.startsWith('model='))?.slice(6);
-          if (model && !e.model) e.model = model;
+          if (model && !e.model) e.model = model.slice(0, 64);
         }
       }
       // A device may answer for its own .local host with a different IP; keep the source only.
